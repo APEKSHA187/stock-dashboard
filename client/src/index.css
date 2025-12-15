@@ -313,3 +313,14 @@ input:focus, select:focus {
   font-size: 14px;
   text-align: center;
 }
+.trending {
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #fff;
+  margin: 12px 0;
+  font-weight: 600;
+}
+.modal.large {
+  max-width: 720px;
+}

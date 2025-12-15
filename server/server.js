@@ -642,6 +642,24 @@ app.get('/me', (req, res) => {
     });
   });
 });
+// =========================
+//   TRANSACTION HISTORY
+// =========================
+app.get('/trades', (req, res) => {
+  return authMiddleware(req, res, () => {
+    const email = req.user.email;
+
+    const rows = db.prepare(`
+      SELECT ticker, qty, type, price, total, ts
+      FROM trades
+      WHERE email = ?
+      ORDER BY ts DESC
+      LIMIT 50
+    `).all(email);
+
+    res.json({ trades: rows });
+  });
+});
 
 // =========================
 //   DEPOSIT endpoint

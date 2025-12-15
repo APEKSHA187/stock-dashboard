@@ -760,249 +760,153 @@ export default function Dashboard() {
   );
 }
 */
-import React, { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
-import { Line } from 'react-chartjs-2';
+import React, { useEffect, useRef, useState } from "react";
+import { io } from "socket.io-client";
+import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
-  Title,
   Tooltip,
   Legend
-} from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import './index.css';
+} from "chart.js";
+import "./index.css";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-// -----------------------
-// Helpers
-// -----------------------
-const getToken = () => localStorage.getItem('token');
-const getEmail = () => localStorage.getItem('email');
+const TICKERS = ["GOOG", "TSLA", "AMZN", "META", "NVDA"];
+const token = () => localStorage.getItem("token");
+const email = () => localStorage.getItem("email");
 
-function normalizePortfolio(portfolio) {
-  if (!portfolio) return { cash: 0, realized: 0, holdings: [], unrealized: 0 };
-
-  const holdings = (portfolio.holdings || []).map(h => ({
-    ticker: h.ticker,
-    qty: Number(h.qty || 0),
-    avg_cost: Number(h.avg_cost || 0),
-    current_price: Number(h.current_price || 0),
-    unrealized: Number(h.unrealized || 0)
-  }));
-
-  return {
-    cash: Number(portfolio.cash || 0),
-    realized: Number(portfolio.realized || 0),
-    holdings,
-    unrealized: Number(portfolio.unrealized || 0)
-  };
-}
-
-function recalcPortfolioWithPrices(portfolio, prices) {
-  if (!portfolio) return portfolio;
-  const holdings = portfolio.holdings.map(h => {
-    const current = prices[h.ticker] ?? h.current_price ?? 0;
-    const unrealized = +((current - h.avg_cost) * h.qty).toFixed(2);
-    return { ...h, current_price: current, unrealized };
-  });
-  const unrealized = holdings.reduce((s, h) => s + h.unrealized, 0);
-  return { ...portfolio, holdings, unrealized: +unrealized.toFixed(2) };
-}
-
-// -----------------------
-// Chart options
-// -----------------------
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { labels: { color: '#fff' } },
-    tooltip: {
-      backgroundColor: '#0b1220',
-      titleColor: '#fff',
-      bodyColor: '#e5e7eb'
-    }
-  },
-  scales: {
-    x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-    y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } }
-  }
-};
-
-// -----------------------
-// MAIN COMPONENT
-// -----------------------
 export default function Dashboard() {
-  const email = getEmail();
-  const token = getToken();
-
-  const [connected, setConnected] = useState(false);
-  const [supported, setSupported] = useState(['GOOG','TSLA','AMZN','META','NVDA']);
   const [prices, setPrices] = useState({});
-  const [portfolio, setPortfolio] = useState({ cash:0, realized:0, holdings: [], unrealized:0 });
-  const [selectedTicker, setSelectedTicker] = useState('GOOG');
-  const [history, setHistory] = useState([]);
-  const [qty, setQty] = useState(1);
-  const [tradeMsg, setTradeMsg] = useState('');
-  const [depositAmount, setDepositAmount] = useState('');
-  const [depositMsg, setDepositMsg] = useState('');
+  const [history, setHistory] = useState({});
+  const [portfolio, setPortfolio] = useState(null);
+  const [selected, setSelected] = useState("GOOG");
+
+  const [showTrades, setShowTrades] = useState(false);
+  const [trades, setTrades] = useState([]);
+
   const socketRef = useRef(null);
 
-  // -----------------------
-  // SOCKET + INITIAL LOAD
-  // -----------------------
+  /* ---------------- SOCKET + DATA ---------------- */
   useEffect(() => {
-    if (!token) {
-      window.location.href = '/login';
+    if (!token()) {
+      window.location.href = "/login";
       return;
     }
 
-    // ✅ SAME-ORIGIN SOCKET (RENDER SAFE)
-    const socket = io({
-      auth: { token },
-      transports: ['websocket']
-    });
+    fetch("/me", { headers: { Authorization: "Bearer " + token() } })
+      .then(r => r.json())
+      .then(d => setPortfolio(d.portfolio));
+
+    const socket = io({ auth: { token: token() } });
     socketRef.current = socket;
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
-
-    socket.on('stockUpdate', (p) => {
-      setPrices(p);
-      setPortfolio(prev => recalcPortfolioWithPrices(prev, p));
-    });
-
-    socket.on('historyUpdate', (all) => {
-      if (all[selectedTicker]) setHistory(all[selectedTicker]);
-    });
-
-    socket.on('portfolioUpdate', (p) => {
-      setPortfolio(recalcPortfolioWithPrices(normalizePortfolio(p), prices));
-    });
-
-    // ✅ RELATIVE FETCH (RENDER SAFE)
-    fetch('/me', {
-      headers: { Authorization: 'Bearer ' + token }
-    })
-      .then(r => r.json())
-      .then(d => {
-        setSupported(d.supported || supported);
-        setPortfolio(recalcPortfolioWithPrices(normalizePortfolio(d.portfolio), prices));
-      });
+    socket.on("stockUpdate", setPrices);
+    socket.on("historyUpdate", setHistory);
+    socket.on("portfolioUpdate", setPortfolio);
 
     return () => socket.disconnect();
-  }, [token, selectedTicker]);
+  }, []);
 
-  // -----------------------
-  // TRADE
-  // -----------------------
-  async function doTrade(type) {
-    setTradeMsg('');
-    const res = await fetch('/trade', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
-      body: JSON.stringify({ type, ticker: selectedTicker, qty: Number(qty) })
+  /* ---------------- TRENDING STOCK ---------------- */
+  const trending = (() => {
+    let best = null;
+    let bestPct = 0;
+
+    TICKERS.forEach(t => {
+      const h = history[t];
+      if (!h || h.length < 6) return;
+      const old = h[h.length - 6];
+      const cur = h[h.length - 1];
+      const pct = ((cur - old) / old) * 100;
+      if (pct > bestPct) {
+        bestPct = pct;
+        best = t;
+      }
+    });
+
+    return best ? { ticker: best, pct: bestPct.toFixed(2) } : null;
+  })();
+
+  /* ---------------- TRANSACTION HISTORY ---------------- */
+  async function loadTrades() {
+    const res = await fetch("/trades", {
+      headers: { Authorization: "Bearer " + token() }
     });
     const data = await res.json();
-    if (!res.ok) setTradeMsg(data.error);
-    else setTradeMsg(`Success: ${type} ${qty} ${selectedTicker}`);
+    setTrades(data.trades || []);
+    setShowTrades(true);
   }
 
-  async function depositCash() {
-    setDepositMsg('');
-    const res = await fetch('/deposit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
-      body: JSON.stringify({ amount: Number(depositAmount) })
-    });
-    const data = await res.json();
-    setDepositMsg(res.ok ? 'Deposit successful' : data.error);
-  }
-
+  /* ---------------- CHART ---------------- */
   const chartData = {
-    labels: history.map((_, i) => i + 1),
-    datasets: [{
-      label: selectedTicker,
-      data: history,
-      borderColor: '#7dd3fc',
-      backgroundColor: 'rgba(125,211,252,0.08)',
-      tension: 0.2
-    }]
+    labels: (history[selected] || []).map((_, i) => i + 1),
+    datasets: [
+      {
+        label: selected,
+        data: history[selected] || [],
+        borderColor: "#38bdf8",
+        backgroundColor: "rgba(56,189,248,0.15)",
+        tension: 0.35,
+        pointRadius: 0
+      }
+    ]
   };
 
-  // -----------------------
-  // RENDER
-  // -----------------------
   return (
     <div className="container">
       <div className="header">
         <h2>Stock Dashboard</h2>
         <div>
-          <strong>{email}</strong>
-          <button className="btn small"
-            onClick={() => {
-              localStorage.clear();
-              window.location.href = '/login';
-            }}>
-            Logout
-          </button>
+          <strong>{email()}</strong>
+          <button className="btn small" onClick={() => {
+            localStorage.clear();
+            window.location.href = "/login";
+          }}>Logout</button>
         </div>
       </div>
 
-      <div className="status">
-        Connection: <span className={connected ? 'connected' : 'disconnected'}>
-          {connected ? 'Connected' : 'Disconnected'}
-        </span>
+      {/* 🔥 TRENDING */}
+      {trending && (
+        <div className="trending">
+          🔥 Trending: <strong>{trending.ticker}</strong> (+{trending.pct}%)
+          <span className="muted"> — Consider Buying</span>
+        </div>
+      )}
+
+      {/* STOCK CARDS */}
+      <div className="grid">
+        {TICKERS.map(t => (
+          <div
+            key={t}
+            className={`card stock-card ${selected === t ? "active" : ""}`}
+            onClick={() => setSelected(t)}
+          >
+            <div>{t}</div>
+            <div>${prices[t]?.toFixed(2)}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="cols">
-        <div className="col">
-          <h3>Supported Stocks</h3>
-          <ul className="list">
-            {supported.map(t => (
-              <li key={t} className="list-item">
-                <strong>{t}</strong>
-                <span>${prices[t]?.toFixed(2) || '—'}</span>
-                <button className="btn small" onClick={() => setSelectedTicker(t)}>View</button>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {/* CHART */}
+      <div className="card chart-card">
+        <h3>{selected} Price Chart</h3>
+        <Line data={chartData} options={{ responsive: true, plugins: { legend: { display: false }}}} />
+      </div>
 
-        <div className="col">
-          <h3>Chart — {selectedTicker}</h3>
-          <div className="chart-card" style={{height:320}}>
-            <Line data={chartData} options={chartOptions} />
-          </div>
-
-          <h3>Trade</h3>
-          <div style={{display:'flex',gap:8}}>
-            <input type="number" value={qty} onChange={e => setQty(e.target.value)} />
-            <button className="btn" onClick={() => doTrade('buy')}>Buy</button>
-            <button className="btn" onClick={() => doTrade('sell')}>Sell</button>
-          </div>
-          <div className="muted">{tradeMsg}</div>
-
+      {/* PORTFOLIO */}
+      {portfolio && (
+        <div className="card">
           <h3>Portfolio</h3>
+          <div>Cash: ${portfolio.cash.toFixed(2)}</div>
+          <div className={portfolio.unrealized >= 0 ? "pl-positive" : "pl-negative"}>
+            Unrealized P/L: {portfolio.unrealized.toFixed(2)}
+          </div>
+
           <table className="table">
             <thead>
               <tr><th>Ticker</th><th>Qty</th><th>Price</th><th>P/L</th></tr>
@@ -1013,7 +917,7 @@ export default function Dashboard() {
                   <td>{h.ticker}</td>
                   <td>{h.qty}</td>
                   <td>${h.current_price.toFixed(2)}</td>
-                  <td className={h.unrealized >= 0 ? 'pl-positive' : 'pl-negative'}>
+                  <td className={h.unrealized >= 0 ? "pl-positive" : "pl-negative"}>
                     {h.unrealized.toFixed(2)}
                   </td>
                 </tr>
@@ -1021,23 +925,43 @@ export default function Dashboard() {
             </tbody>
           </table>
 
-          <div style={{marginTop:8}}>
-            <strong>Cash:</strong> ${portfolio.cash.toFixed(2)} &nbsp;
-            <strong>Unrealized:</strong> {portfolio.unrealized.toFixed(2)}
-          </div>
+          <button className="btn" onClick={loadTrades}>
+            View Transaction History
+          </button>
+        </div>
+      )}
 
-          <div style={{marginTop:10}}>
-            <input
-              type="number"
-              placeholder="Add cash"
-              value={depositAmount}
-              onChange={e => setDepositAmount(e.target.value)}
-            />
-            <button className="btn" onClick={depositCash}>Add</button>
-            <div className="muted">{depositMsg}</div>
+      {/* TRANSACTION MODAL */}
+      {showTrades && (
+        <div className="modal-backdrop">
+          <div className="modal large">
+            <h3>Transaction History</h3>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Type</th><th>Ticker</th><th>Qty</th><th>Price</th><th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((t, i) => (
+                  <tr key={i}>
+                    <td className={t.type === "buy" ? "pl-positive" : "pl-negative"}>
+                      {t.type.toUpperCase()}
+                    </td>
+                    <td>{t.ticker}</td>
+                    <td>{t.qty}</td>
+                    <td>${t.price.toFixed(2)}</td>
+                    <td>{new Date(t.ts).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn secondary" onClick={() => setShowTrades(false)}>
+              Close
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
