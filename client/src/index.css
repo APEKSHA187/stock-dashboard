@@ -315,12 +315,27 @@ input:focus, select:focus {
 }
 .trending {
   background: linear-gradient(90deg, #0ea5e9, #22c55e);
-  padding: 10px 14px;
-  border-radius: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin: 10px 0;
   color: #fff;
-  margin: 12px 0;
   font-weight: 600;
 }
-.modal.large {
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #0b1220;
+  padding: 20px;
+  border-radius: 12px;
   max-width: 720px;
+  width: 100%;
 }
