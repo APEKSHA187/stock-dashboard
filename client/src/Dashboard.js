@@ -329,7 +329,7 @@ export default function Dashboard() {
   );
 }
 */
-
+/*
 // client/src/Dashboard.js
 import React, { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
@@ -756,6 +756,61 @@ export default function Dashboard() {
       </div>
 
       <div className="note" style={{marginTop:16}}>Tip: Open another browser/incognito and login with another user to test asynchronous updates.</div>
+    </div>
+  );
+}
+*/
+import React, { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+import "./index.css";
+
+export default function Dashboard() {
+  const token = localStorage.getItem("token");
+  const [prices, setPrices] = useState({});
+  const [portfolio, setPortfolio] = useState(null);
+
+  useEffect(() => {
+    if (!token) return;
+
+    fetch("/me", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => setPortfolio(data.portfolio));
+
+    const socket = io({
+      auth: { token }
+    });
+
+    socket.on("stockUpdate", setPrices);
+    socket.on("portfolioUpdate", setPortfolio);
+
+    return () => socket.disconnect();
+  }, [token]);
+
+  if (!token) {
+    window.location.href = "/login";
+    return null;
+  }
+
+  return (
+    <div className="container">
+      <h2>Stock Dashboard</h2>
+
+      <div className="col">
+        <h3>Live Prices</h3>
+        {Object.entries(prices).map(([t, p]) => (
+          <div key={t}>{t}: ${p}</div>
+        ))}
+      </div>
+
+      {portfolio && (
+        <div className="col">
+          <h3>Portfolio</h3>
+          <div>Cash: ${portfolio.cash}</div>
+          <div>Unrealized P/L: {portfolio.unrealized}</div>
+        </div>
+      )}
     </div>
   );
 }

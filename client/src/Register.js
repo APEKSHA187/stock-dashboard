@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "./index.css";
 
-const API = "http://localhost:4000";
-
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,7 +13,7 @@ export default function Register() {
     setError("");
 
     try {
-      const res = await fetch(`${API}/register`, {
+      const res = await fetch("/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
@@ -43,7 +41,6 @@ export default function Register() {
           <label>Email</label>
           <input
             type="email"
-            placeholder="you@example.com"
             value={email}
             onChange={e => setEmail(e.target.value)}
             required
@@ -52,7 +49,6 @@ export default function Register() {
           <label>Password</label>
           <input
             type="password"
-            placeholder="Minimum 6 characters"
             value={password}
             onChange={e => setPassword(e.target.value)}
             required
