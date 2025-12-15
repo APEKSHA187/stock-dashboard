@@ -1,0 +1,18 @@
+{
+  "users": [
+    {
+      "id": "7eSeRALobbDU-SM-WsqSK",
+      "email": "01fe22bcs310@kletech.ac.in",
+      "passwordHash": "$2a$10$RMHfOlXkblSE2TP06QqqzOrkOeoqWpS2ZHRHZpNfLKIkVxIiJU/oC"
+    }
+  ],
+  "portfolios": {
+    "01fe22bcs310@kletech.ac.in": {
+      "cash": 98674.72,
+      "holdings": {
+        "GOOG": 11
+      }
+    }
+  },
+  "nextTradeId": 4
+}
