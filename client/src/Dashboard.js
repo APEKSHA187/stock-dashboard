@@ -760,7 +760,7 @@ export default function Dashboard() {
   );
 }
 */
-import React, { useEffect, useState } from "react";
+/*import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./index.css";
 
@@ -809,6 +809,253 @@ export default function Dashboard() {
           <h3>Portfolio</h3>
           <div>Cash: ${portfolio.cash}</div>
           <div>Unrealized P/L: {portfolio.unrealized}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+*/
+import React, { useEffect, useMemo, useState } from "react";
+import { io } from "socket.io-client";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend
+} from "chart.js";
+import "./index.css";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend
+);
+
+const TICKERS = ["GOOG", "TSLA", "AMZN", "META", "NVDA"];
+
+export default function Dashboard() {
+  const token = localStorage.getItem("token");
+
+  const [prices, setPrices] = useState({});
+  const [history, setHistory] = useState({});
+  const [portfolio, setPortfolio] = useState(null);
+
+  const [selectedTicker, setSelectedTicker] = useState("GOOG");
+  const [showTrade, setShowTrade] = useState(false);
+  const [tradeType, setTradeType] = useState("buy");
+  const [qty, setQty] = useState(1);
+  const [error, setError] = useState("");
+
+  /* ===============================
+     INITIAL LOAD + SOCKET
+  =============================== */
+  useEffect(() => {
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
+    fetch("/me", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => setPortfolio(d.portfolio));
+
+    const socket = io({
+      auth: { token }
+    });
+
+    socket.on("stockUpdate", setPrices);
+    socket.on("historyUpdate", setHistory);
+    socket.on("portfolioUpdate", setPortfolio);
+
+    return () => socket.disconnect();
+  }, [token]);
+
+  /* ===============================
+     TRADE HANDLER
+  =============================== */
+  async function executeTrade() {
+    setError("");
+
+    try {
+      const res = await fetch("/trade", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          type: tradeType,
+          ticker: selectedTicker,
+          qty: Number(qty)
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Trade failed");
+
+      setShowTrade(false);
+      setQty(1);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  /* ===============================
+     CHART CONFIG
+  =============================== */
+  const chartData = useMemo(() => {
+    const hist = history[selectedTicker] || [];
+    return {
+      labels: hist.map((_, i) => i + 1),
+      datasets: [
+        {
+          label: selectedTicker,
+          data: hist,
+          borderColor: "#4fc3f7",
+          backgroundColor: "rgba(79,195,247,0.2)",
+          tension: 0.4,
+          pointRadius: 0
+        }
+      ]
+    };
+  }, [history, selectedTicker]);
+
+  /* ===============================
+     RENDER
+  =============================== */
+  return (
+    <div className="container">
+      <h2 className="title">Stock Dashboard</h2>
+
+      {/* ===== LIVE STOCK CARDS ===== */}
+      <div className="grid">
+        {TICKERS.map(t => (
+          <div
+            key={t}
+            className={`card stock-card ${selectedTicker === t ? "active" : ""}`}
+            onClick={() => setSelectedTicker(t)}
+          >
+            <div className="stock-name">{t}</div>
+            <div className="stock-price">${prices[t]?.toFixed(2)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== CHART ===== */}
+      <div className="card chart-card">
+        <h3>Chart — {selectedTicker}</h3>
+        <Line
+          data={chartData}
+          options={{
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { display: false } },
+              y: { ticks: { color: "#9fb3c8" } }
+            }
+          }}
+        />
+      </div>
+
+      {/* ===== PORTFOLIO ===== */}
+      {portfolio && (
+        <div className="card portfolio-card">
+          <h3>My Portfolio</h3>
+
+          <div className="portfolio-summary">
+            <div>Cash: ${portfolio.cash.toFixed(2)}</div>
+            <div
+              className={
+                portfolio.unrealized >= 0 ? "pl-positive" : "pl-negative"
+              }
+            >
+              Unrealized P/L: {portfolio.unrealized.toFixed(2)}
+            </div>
+          </div>
+
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {portfolio.holdings.map(h => (
+                <tr key={h.ticker}>
+                  <td>{h.ticker}</td>
+                  <td>{h.qty}</td>
+                  <td>${h.current_price.toFixed(2)}</td>
+                  <td
+                    className={
+                      h.unrealized >= 0 ? "pl-positive" : "pl-negative"
+                    }
+                  >
+                    {h.unrealized.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button className="btn trade-btn" onClick={() => setShowTrade(true)}>
+            Buy / Sell
+          </button>
+        </div>
+      )}
+
+      {/* ===== TRADE MODAL ===== */}
+      {showTrade && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h3>{tradeType === "buy" ? "Buy Stock" : "Sell Stock"}</h3>
+
+            <select
+              value={selectedTicker}
+              onChange={e => setSelectedTicker(e.target.value)}
+            >
+              {TICKERS.map(t => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+
+            <select
+              value={tradeType}
+              onChange={e => setTradeType(e.target.value)}
+            >
+              <option value="buy">Buy</option>
+              <option value="sell">Sell</option>
+            </select>
+
+            <input
+              type="number"
+              min="1"
+              value={qty}
+              onChange={e => setQty(e.target.value)}
+            />
+
+            {error && <div className="auth-error">{error}</div>}
+
+            <div className="modal-actions">
+              <button className="btn" onClick={executeTrade}>
+                Confirm
+              </button>
+              <button className="btn secondary" onClick={() => setShowTrade(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
